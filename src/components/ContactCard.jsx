@@ -36,12 +36,12 @@ const Icons = {
 };
 
 const LINKS = [
-  { icon: 'github', label: 'GitHub', href: 'https://github.com/brenflakes' },
+  { icon: 'email', label: 'Email', href: 'mailto:hello@bren.id.au' },
   { icon: 'linkedin', label: 'LinkedIn', href: 'https://www.linkedin.com/in/brendan-albury-a8a71886' },
   { icon: 'x', label: 'X', href: 'https://x.com/BrendanAlb48051' },
   { icon: 'facebook', label: 'Facebook', href: 'https://facebook.com/brenflakes' },
   { icon: 'discord', label: 'Discord', href: null, copyText: 'bren_99' },
-  { icon: 'email', label: 'Email', href: 'mailto:hello@bren.id.au' },
+  { icon: 'github', label: 'GitHub', href: 'https://github.com/brenflakes' },
 ];
 
 const ContactCard = () => {
