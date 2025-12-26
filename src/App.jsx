@@ -496,30 +496,49 @@ const AustraliaNetwork = () => {
   }, []);
 
   const bootSequence = useCallback(() => {
-    setTitleChars([]);
+    // Clear any pending animation
+    if (titleAnimationRef.current) {
+      clearTimeout(titleAnimationRef.current);
+    }
+    
+    // Reset to clean state
+    setTitleChars(TITLE_TEXT.split('').map(char => ({
+      char: '',
+      target: char,
+      locked: true,
+      color: COLORS.accent,
+    })));
     setBootPrefix('');
     setShowCursor(true);
     
-    // Type the prompt first
-    setTimeout(() => setBootPrefix('>'), 200);
-    setTimeout(() => setBootPrefix('> '), 400);
+    // Create a cancellation token for this animation instance
+    const animationId = Date.now();
+    titleAnimationRef.animationId = animationId;
     
-    // Use ref-like approach to avoid closure issues
+    // Type the prompt first
+    setTimeout(() => {
+      if (titleAnimationRef.animationId !== animationId) return;
+      setBootPrefix('>');
+    }, 200);
+    setTimeout(() => {
+      if (titleAnimationRef.animationId !== animationId) return;
+      setBootPrefix('> ');
+    }, 400);
+    
     const state = { charIndex: 0 };
     
     const typeChar = () => {
+      // Check if this animation was cancelled
+      if (titleAnimationRef.animationId !== animationId) return;
+      
       if (state.charIndex >= TITLE_TEXT.length) {
-        // Keep cursor blinking until next animation takes over
         return;
       }
       
-      const currentChar = TITLE_TEXT[state.charIndex];
-      setTitleChars(prev => [...prev, {
-        char: currentChar,
-        target: currentChar,
-        locked: true,
-        color: COLORS.accent,
-      }]);
+      const idx = state.charIndex;
+      setTitleChars(prev => prev.map((c, i) => 
+        i === idx ? { ...c, char: c.target } : c
+      ));
       
       state.charIndex++;
       titleAnimationRef.current = setTimeout(typeChar, 60 + Math.random() * 80);
@@ -534,6 +553,12 @@ const AustraliaNetwork = () => {
     let cycleTimeout;
     
     const runAnimation = () => {
+      // Invalidate any running animation
+      titleAnimationRef.animationId = null;
+      if (titleAnimationRef.current) {
+        clearTimeout(titleAnimationRef.current);
+      }
+      
       // Pick random font
       setTitleFont(FONTS[Math.floor(Math.random() * FONTS.length)]);
       // Run random animation
@@ -543,9 +568,6 @@ const AustraliaNetwork = () => {
       // Schedule next animation with pause
       // Wait 10-15 seconds, giving time for animation to complete + deliberate pause
       cycleTimeout = setTimeout(() => {
-        if (titleAnimationRef.current) {
-          clearTimeout(titleAnimationRef.current);
-        }
         runAnimation();
       }, 10000 + Math.random() * 5000);
     };
@@ -555,6 +577,7 @@ const AustraliaNetwork = () => {
     
     return () => {
       clearTimeout(cycleTimeout);
+      titleAnimationRef.animationId = null;
       if (titleAnimationRef.current) {
         clearTimeout(titleAnimationRef.current);
       }
