@@ -2,7 +2,15 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { FONTS, TITLE_TEXT, GLITCH_CHARS, COLORS } from '../constants';
 
 const AnimatedTitle = () => {
-  const [titleChars, setTitleChars] = useState([]);
+  // Initialize with the title already visible
+  const [titleChars, setTitleChars] = useState(
+    TITLE_TEXT.split('').map(char => ({
+      char,
+      target: char,
+      locked: true,
+      color: COLORS.accent,
+    }))
+  );
   const [titleFont, setTitleFont] = useState(FONTS[0]);
   const [bootPrefix, setBootPrefix] = useState('');
   const [showCursor, setShowCursor] = useState(false);
@@ -259,10 +267,11 @@ const AnimatedTitle = () => {
       
       cycleTimeout = setTimeout(() => {
         runAnimation();
-      }, 10000 + Math.random() * 5000);
+      }, 12000 + Math.random() * 6000);  // 12-18 seconds between animations
     };
     
-    cycleTimeout = setTimeout(runAnimation, 500);
+    // Initial run after 2 seconds so user sees static title first
+    cycleTimeout = setTimeout(runAnimation, 2000);
     
     return () => {
       clearTimeout(cycleTimeout);
