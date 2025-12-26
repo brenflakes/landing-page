@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import SpaceBackground from './components/SpaceBackground';
 import AnimatedTitle from './components/AnimatedTitle';
 import NetworkMap from './components/NetworkMap';
+import ContactCard from './components/ContactCard';
 import { 
   CONNECTIONS, 
   CITIES, 
@@ -260,6 +261,8 @@ const LandingPage = () => {
       />
       
       <AnimatedTitle />
+      
+      <ContactCard />
     </div>
   );
 };
