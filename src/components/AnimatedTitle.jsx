@@ -13,10 +13,17 @@ const AnimatedTitle = () => {
 
   // Animation: Matrix-style decode
   const matrixDecode = useCallback(() => {
+    if (titleAnimationRef.current) {
+      clearTimeout(titleAnimationRef.current);
+    }
     setShowCursor(false);
     setBootPrefix('');
     
-    const lockTimes = TITLE_TEXT.split('').map((_, i) => i * 1.5 + Math.random() * 4);
+    const animationId = Date.now();
+    titleAnimationRef.animationId = animationId;
+    
+    // Lock times: complete within ~5 seconds so cycle has breathing room
+    const lockTimes = TITLE_TEXT.split('').map((_, i) => i * 0.4 + Math.random() * 2);
     
     setTitleChars(TITLE_TEXT.split('').map((char, i) => ({
       char: getRandomChar(),
@@ -29,6 +36,8 @@ const AnimatedTitle = () => {
     const startTime = Date.now();
     
     const iterate = () => {
+      if (titleAnimationRef.animationId !== animationId) return;
+      
       const elapsed = (Date.now() - startTime) / 1000;
       
       setTitleChars(prev => prev.map((c, i) => {
@@ -59,8 +68,14 @@ const AnimatedTitle = () => {
 
   // Animation: Glitch scramble
   const glitchScramble = useCallback(() => {
+    if (titleAnimationRef.current) {
+      clearTimeout(titleAnimationRef.current);
+    }
     setShowCursor(false);
     setBootPrefix('');
+    
+    const animationId = Date.now();
+    titleAnimationRef.animationId = animationId;
     
     setTitleChars(TITLE_TEXT.split('').map(char => ({
       char,
@@ -74,6 +89,8 @@ const AnimatedTitle = () => {
     let resetTimeout = null;
     
     const doGlitch = () => {
+      if (titleAnimationRef.animationId !== animationId) return;
+      
       if (glitchCount >= maxGlitches) {
         setTitleChars(TITLE_TEXT.split('').map(char => ({
           char,
@@ -103,6 +120,7 @@ const AnimatedTitle = () => {
       if (resetTimeout) clearTimeout(resetTimeout);
       
       resetTimeout = setTimeout(() => {
+        if (titleAnimationRef.animationId !== animationId) return;
         setTitleChars(TITLE_TEXT.split('').map(char => ({
           char,
           target: char,
@@ -120,9 +138,15 @@ const AnimatedTitle = () => {
 
   // Animation: Packet arrival
   const packetArrival = useCallback(() => {
+    if (titleAnimationRef.current) {
+      clearTimeout(titleAnimationRef.current);
+    }
     setShowCursor(false);
     setBootPrefix('');
     setCharBursts([]);
+    
+    const animationId = Date.now();
+    titleAnimationRef.animationId = animationId;
     
     setTitleChars(TITLE_TEXT.split('').map(char => ({
       char: '',
@@ -134,6 +158,7 @@ const AnimatedTitle = () => {
     const state = { charIndex: 0 };
     
     const revealChar = () => {
+      if (titleAnimationRef.animationId !== animationId) return;
       if (state.charIndex >= TITLE_TEXT.length) return;
       
       const idx = state.charIndex;
