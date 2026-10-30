@@ -9,6 +9,15 @@ A solar system that is Bren. `bren.id.au` is the star; his interests orbit it as
 Packets still fly between planets, so the network-topology DNA of v1 carries over.
 Mood: **chill and ambient — busy, never overwhelming.**
 
+## Direction change (30 Oct, Bren): engaging, not rare
+
+"I don't really want rare anymore, I want engaging, so stuff happens and it's obvious but add a
+bit of randomness... I want people to be like hang on a sec." So: an event every 6-14 s, chosen at
+random with no repeats in the last three, each with its own random variations, and **every planet
+does its own thing when tapped** (the star triggers the Pendulum drop). Implemented in
+`src/cosmos/events.js`; `?force=<id>` repeats one event for testing. The rarity tiers below are
+kept as the original idea, now mostly superseded.
+
 ## The soul: rarity, not key combos
 
 v1's easter eggs were never triggers. They were weighted randomness: a 5% amber packet, a 1%
