@@ -13,7 +13,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
   const ctx = canvas.getContext('2d');
   let W = 0, H = 0, dpr = 1;
   let cx = 0, cy = 0, R = 0, tilt = 0.55;  // system centre, radius, ellipse flattening
-  let stars = [], shooting = [], packets = [], effects = [], active = [];
+  let stars = [], shooting = [], packets = [], effects = [], active = [], queued = [];
   let raf = 0, last = 0, t = 0, running = false;
   let nextPacket = 0.6, nextShooting = rand(4, 10), nextEvent = 0;
   const recent = [];  // last few director picks, to avoid repeats
@@ -31,6 +31,8 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     planet: (id) => PLANETS.find(p => p.id === id),
     pos: (node) => posOf(node),
     spawnPacket: (...a) => spawnPacket(...a),
+    fire: (def, opts) => fire(def, opts),
+    count: (kind) => active.concat(queued).filter(e => e.kind === kind).length,
     // Knobs events may set each frame; reset to neutral at the start of every frame.
     sunGain: 1,      // corona/core brightness multiplier
     sunDim: 0,       // 0..1 darkening (Astrophage)
@@ -111,8 +113,10 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     });
   }
 
-  function fire(def) {
-    active.push(def.create(world));
+  // New events are queued and merged after this frame's updates, so an event can fire others
+  // from inside its own update without being lost.
+  function fire(def, opts) {
+    queued.push(def.create(world, opts));
   }
 
   // The director: weighted pick, never one of the last three, never a "big" event while
@@ -120,7 +124,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
   function direct() {
     if (force) { const d = EVENTS.find(e => e.id === force); if (d) fire(d); nextEvent = 9; return; }
     const bigRunning = active.some(e => e.big);
-    const pool = EVENTS.filter(e => !recent.includes(e.id) && !(bigRunning && e.big));
+    const pool = EVENTS.filter(e => e.weight > 0 && !recent.includes(e.id) && !(bigRunning && e.big));
     const total = pool.reduce((s, e) => s + e.weight, 0);
     let r = Math.random() * total, def = pool[0];
     for (const e of pool) { r -= e.weight; if (r <= 0) { def = e; break; } }
@@ -141,7 +145,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     nextEvent -= dt;
     if (nextEvent <= 0) direct();
 
-    active = active.filter(e => e.update(dt, world) !== false);
+    active = active.filter(e => e.update(dt, world) !== false).concat(queued.splice(0));
 
     for (const p of packets) {
       p.age += dt;
@@ -338,7 +342,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     const p = planetAt(ev);
     if (!p || (cooldown[p.id] || 0) > t) return;
     const def = PLANET_EVENTS[p.id];
-    if (def) { fire(def); cooldown[p.id] = t + 1.5; }
+    if (def) { fire(def); cooldown[p.id] = t + (def.cooldown ?? 1.5); }
   };
 
   // ---- loop ---------------------------------------------------------------

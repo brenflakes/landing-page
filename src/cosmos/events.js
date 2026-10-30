@@ -76,60 +76,124 @@ const RADIO = [
   ['TEAM RADIO', 'Box box. Box box.'],
 ];
 
-function drawCar(ctx, x, y, heading, L) {
+// Liveries. Red Bull is always first; spam the F1 planet and rivals join in.
+const LIVERIES = [
+  { name: 'VERSTAPPEN', body: RB.navy,   floor: RB.dark,   wing: RB.red,   tip: RB.yellow, trail: [RB.red, RB.yellow] },
+  { name: 'NORRIS',     body: '#ff8000', floor: '#1a1a1a', wing: '#47c7fc', tip: '#000000', trail: ['#ff8000', '#47c7fc'] },
+  { name: 'LECLERC',    body: '#dc0000', floor: '#2a0000', wing: '#fff200', tip: '#ffffff', trail: ['#dc0000', '#fff200'] },
+  { name: 'RUSSELL',    body: '#c8ccd2', floor: '#111111', wing: '#00d2be', tip: '#111111', trail: ['#c8ccd2', '#00d2be'] },
+  { name: 'ALONSO',     body: '#00594f', floor: '#002420', wing: '#cedc00', tip: '#cedc00', trail: ['#00594f', '#cedc00'] },
+];
+
+function drawCar(ctx, x, y, heading, L, lv = LIVERIES[0]) {
   ctx.save();
   ctx.translate(x, y); ctx.rotate(heading);
   const W = L * 0.32;
   ctx.fillStyle = '#0b0b0b';  // tyres
   for (const [tx, ty] of [[0.28, 1], [0.28, -1], [-0.32, 1], [-0.32, -1]]) ctx.fillRect(tx * L - L * 0.08, ty * W * 0.62 - W * 0.17, L * 0.16, W * 0.34);
-  ctx.fillStyle = RB.dark;  // floor and sidepods
+  ctx.fillStyle = lv.floor;  // floor and sidepods
   ctx.beginPath(); ctx.roundRect(-L * 0.38, -W * 0.42, L * 0.62, W * 0.84, W * 0.3); ctx.fill();
-  ctx.fillStyle = RB.navy;  // nose + body
+  ctx.fillStyle = lv.body;  // nose + body
   ctx.beginPath(); ctx.moveTo(L * 0.5, 0); ctx.lineTo(L * 0.1, -W * 0.18); ctx.lineTo(-L * 0.4, -W * 0.22);
   ctx.lineTo(-L * 0.4, W * 0.22); ctx.lineTo(L * 0.1, W * 0.18); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = RB.red;  // front wing + bull
+  ctx.fillStyle = lv.wing;  // front wing + engine cover badge
   ctx.fillRect(L * 0.42, -W * 0.55, L * 0.07, W * 1.1);
   ctx.beginPath(); ctx.arc(-L * 0.05, 0, W * 0.15, 0, TAU); ctx.fill();
-  ctx.fillStyle = RB.yellow;  // nose tip + rear wing
+  ctx.fillStyle = lv.tip;  // nose tip + rear wing
   ctx.beginPath(); ctx.arc(L * 0.47, 0, W * 0.08, 0, TAU); ctx.fill();
   ctx.fillRect(-L * 0.5, -W * 0.5, L * 0.08, W);
   ctx.restore();
 }
 
+// One car lapping the star. opts (used by the race): livery, laps, dur, grid offsets, no radio.
 const redbull = {
   id: 'redbull', weight: 3,
-  create(w) {
+  create(w, opts = {}) {
     const f1 = w.planet('f1');
     const start = w.pos(f1);
-    const a0 = start.ang, laps = rand(1.1, 1.6), dir = 1;
-    const radio = Math.random() < 0.6 ? pick(RADIO) : null;
+    const lv = opts.livery || LIVERIES[w.count('car') % LIVERIES.length];
+    const a0 = start.ang + (opts.da || 0), laps = opts.laps || rand(1.1, 1.6), dr = opts.dr || 0;
+    const radio = opts.quiet ? null : Math.random() < 0.6 ? pick(RADIO) : null;
     const trail = [];
     let prev = null;
-    return timed(rand(5, 6.5), {
+    return timed(opts.dur || rand(5, 6.5), {
+      kind: 'car',
       update(dt, w, k) {
         // Ease-in sweep round the star on a slightly wider orbit, then spear off-screen.
         const sweep = Math.pow(k, 1.5) * laps * TAU;
-        let r = w.R * (f1.orbit + (1.08 - f1.orbit) * ease(k * 4));
+        let r = w.R * (f1.orbit + dr + (1.08 - f1.orbit) * ease(k * 4));
         if (k > 0.82) r *= 1 + Math.pow((k - 0.82) / 0.18, 2) * 2.5;
-        const th = a0 + dir * sweep;
+        const th = a0 + sweep;
         const p = { x: w.cx + Math.cos(th) * r, y: w.cy + Math.sin(th) * r * w.tilt };
         this.heading = prev ? Math.atan2(p.y - prev.y, p.x - prev.x) : this.heading || 0;
         prev = this.p = p;
         trail.push(p); if (trail.length > 26) trail.shift();
-        w.planetGlow.f1 = Math.max(0, 1 - k * 5);
+        w.planetGlow.f1 = Math.max(w.planetGlow.f1 || 0, 1 - k * 5);
       },
       draw(ctx, w, layer) {
         if (layer === 'hud' && radio) caption(ctx, w, { label: '📻 ' + radio[0], text: radio[1], color: RB.yellow, k: clamp(this.age / 4) });
         if (layer !== 'front' || !this.p) return;
-        for (const [col, off, lw] of [[RB.red, -1, 2], [RB.yellow, 1, 1.2]]) {
+        for (const [col, off, lw] of [[lv.trail[0], -1, 2], [lv.trail[1], 1, 1.2]]) {
           for (let i = 1; i < trail.length; i++) {
             ctx.strokeStyle = rgba(col, (i / trail.length) * 0.55); ctx.lineWidth = lw;
             ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y + off); ctx.lineTo(trail[i].x, trail[i].y + off); ctx.stroke();
           }
         }
-        drawCar(ctx, this.p.x, this.p.y, this.heading, Math.max(24, w.R * 0.1));
+        drawCar(ctx, this.p.x, this.p.y, this.heading, Math.max(24, w.R * 0.1), lv);
       },
     });
+  },
+};
+
+// Five cars at once -> a proper start. Lights come on one by one, hold, go out, and the whole
+// grid launches together. Max wins. Obviously.
+const lightsout = {
+  id: 'lightsout', weight: 0.5, big: true,
+  create(w) {
+    const step = 0.55, hold = rand(0.5, 1.4), go = step * 5 + hold, raceDur = 6.2;
+    let launched = false;
+    return timed(go + raceDur + 0.5, {
+      kind: 'lightsout', big: true,
+      update(dt, w) {
+        w.planetGlow.f1 = 0.6;
+        if (!launched && this.age >= go) {
+          launched = true;
+          LIVERIES.forEach((lv, i) => w.fire(redbull, {
+            livery: lv, quiet: true, dur: raceDur,
+            laps: 1.5 * (i === 0 ? 1.04 : 1 - i * 0.025),  // Max pulls away
+            da: -0.05 * i, dr: (i % 2 ? 0.035 : -0.035),     // staggered two-wide grid
+          }));
+        }
+      },
+      draw(ctx, w, layer) {
+        if (layer !== 'hud') return;
+        const t = this.age;
+        if (t < go + 0.35) {  // the gantry
+          const lit = t < go ? Math.min(5, Math.floor(t / step) + 1) : 0;
+          const y = Math.max(34, w.cy - w.R * w.tilt - 36), r = 7, gap = 22, x0 = w.cx - gap * 2;
+          ctx.fillStyle = 'rgba(10,10,12,0.9)';
+          ctx.beginPath(); ctx.roundRect(x0 - 16, y - 14, gap * 4 + 32, 28, 6); ctx.fill();
+          for (let i = 0; i < 5; i++) {
+            ctx.save();
+            ctx.fillStyle = i < lit ? '#ff1e1e' : '#2a0b0b';
+            if (i < lit) { ctx.shadowColor = '#ff1e1e'; ctx.shadowBlur = 14; }
+            ctx.beginPath(); ctx.arc(x0 + i * gap, y, r, 0, TAU); ctx.fill();
+            ctx.restore();
+          }
+        }
+        if (t >= go && t < go + 3) caption(ctx, w, { label: '🎙 CROFTY', text: 'IT\'S LIGHTS OUT AND AWAY WE GO!', color: '#ff1e1e', k: (t - go) / 3 });
+        if (t >= go + raceDur * 0.75) caption(ctx, w, { label: '🏁 P1', text: 'MAX VERSTAPPEN. Simply lovely.', color: RB.yellow, k: clamp((t - go - raceDur * 0.75) / (this.dur - go - raceDur * 0.75)) });
+      },
+    });
+  },
+};
+
+// Tapping F1: another car (in the next livery), or with four already out, the race start.
+const f1tap = {
+  id: 'f1tap', weight: 0, cooldown: 0.6,
+  create(w) {
+    if (w.count('car') >= 4 && !w.count('lightsout')) { w.fire(lightsout); return { update: () => false }; }
+    return redbull.create(w);
   },
 };
 
@@ -526,9 +590,9 @@ const printing = {
 };
 
 // Director pool.
-export const EVENTS = [redbull, radio, pendulum, pivot, iss, storm, bubbles, hyperspace, astrophage, voyager, approved, homelab, thinking, printing];
+export const EVENTS = [redbull, lightsout, radio, pendulum, pivot, iss, storm, bubbles, hyperspace, astrophage, voyager, approved, homelab, thinking, printing];
 
 // Tap a planet -> its signature event. Tap the star -> the drop.
 export const PLANET_EVENTS = {
-  f1: redbull, storm, homebrew: bubbles, payments: approved, homelab, ai: thinking, printing, star: pendulum,
+  f1: f1tap, storm, homebrew: bubbles, payments: approved, homelab, ai: thinking, printing, star: pendulum,
 };
