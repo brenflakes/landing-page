@@ -56,7 +56,9 @@ const ContactCard = () => {
 
   const styles = {
     card: {
-      background: 'rgba(0, 0, 0, 0.3)',
+      background: 'rgba(5, 7, 12, 0.6)',
+      backdropFilter: 'blur(6px)',
+      WebkitBackdropFilter: 'blur(6px)',
       border: '1px solid rgba(88, 166, 255, 0.2)',
       borderRadius: '8px',
       padding: '1.5rem 2rem',

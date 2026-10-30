@@ -25,11 +25,11 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const portrait = H > W;
-    tilt = portrait ? 0.62 : 0.5;
+    tilt = portrait ? 0.78 : 0.5;
     // System sits in the upper part of the screen, leaving room for title + card below.
-    cy = H * (portrait ? 0.36 : 0.40);
+    cy = H * (portrait ? 0.34 : 0.35);
     cx = W / 2;
-    R = Math.min(W * 0.46, (H * (portrait ? 0.30 : 0.36)) / tilt);
+    R = Math.min(W * (portrait ? 0.47 : 0.38), (H * (portrait ? 0.25 : 0.27)) / tilt);
     makeStars();
   }
 
@@ -176,14 +176,17 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
   }
 
   function drawSun() {
-    const breathe = 1 + 0.04 * Math.sin(t * 0.8);
-    const r = Math.max(10, R * 0.075) * breathe;
-    let g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 6);
-    g.addColorStop(0, 'rgba(88,166,255,0.22)'); g.addColorStop(0.3, 'rgba(88,166,255,0.06)'); g.addColorStop(1, 'rgba(88,166,255,0)');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 6, 0, TAU); ctx.fill();
-    g = ctx.createRadialGradient(cx - r * 0.3, cy - r * 0.3, 0, cx, cy, r);
-    g.addColorStop(0, '#ffffff'); g.addColorStop(0.35, '#cfe6ff'); g.addColorStop(1, '#58a6ff');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+    // A star, not a ball: small hot core, wide soft corona that breathes and flickers slightly.
+    const breathe = 1 + 0.05 * Math.sin(t * 0.7) + 0.015 * Math.sin(t * 3.1);
+    const r = Math.max(7, R * 0.042);
+    let g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 9 * breathe);
+    g.addColorStop(0, 'rgba(120,180,255,0.30)'); g.addColorStop(0.15, 'rgba(88,166,255,0.12)');
+    g.addColorStop(0.45, 'rgba(88,166,255,0.035)'); g.addColorStop(1, 'rgba(88,166,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 9 * breathe, 0, TAU); ctx.fill();
+    g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.6);
+    g.addColorStop(0, '#ffffff'); g.addColorStop(0.45, '#e6f1ff'); g.addColorStop(0.75, 'rgba(160,205,255,0.7)');
+    g.addColorStop(1, 'rgba(88,166,255,0)');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 1.6, 0, TAU); ctx.fill();
   }
 
   function drawPlanet({ p, x, y, depth }) {
