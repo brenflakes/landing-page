@@ -35,7 +35,7 @@ function caption(ctx, w, { owner, label, text, color = '#58a6ff', k, x, y, size 
   const bw = tw + lw + 24, bh = size + 14;
   if (bw > w.W - 16 && size > 8) {  // narrow phones: shrink to fit rather than clip
     ctx.restore();
-    return caption(ctx, w, { owner: this,label, text, color, k, x, y, size: Math.max(8, Math.floor(size * (w.W - 16) / bw)) });
+    return caption(ctx, w, { owner: this, label, text, color, k, x, y, size: Math.max(8, Math.floor(size * (w.W - 16) / bw)) });
   }
   ctx.fillStyle = `rgba(5,7,12,${0.75 * a})`;
   ctx.strokeStyle = rgba(color, 0.5 * a); ctx.lineWidth = 1;
@@ -66,7 +66,7 @@ function shout(ctx, text, x, y, color, a, size = 18) {
 function timed(dur, parts) {
   const inst = { age: 0, dur, ...parts };
   const u = parts.update;
-  inst.update = (dt, w) => { inst.age += dt; u?.call(inst, dt, w, inst.age / dur); return inst.age < dur; };
+  inst.update = (dt, w) => { inst.age += dt; u?.call(inst, dt, w, inst.age / inst.dur); return inst.age < inst.dur; };
   return inst;
 }
 
@@ -121,11 +121,21 @@ const redbull = {
     const lv = opts.livery || LIVERIES[w.count('car') % LIVERIES.length];
     const a0 = start.ang + (opts.da || 0), laps = opts.laps || rand(1.1, 1.6), dr = opts.dr || 0;
     const radio = opts.quiet || w.count('car') > 0 ? null : Math.random() < 0.6 ? pick(RADIO) : null;
-    const trail = [];
+    const trail = [], smoke = [];
     let prev = null;
     return timed(opts.dur || rand(5, 6.5), {
-      kind: 'car',
+      kind: 'car', spin: 0, spinLeft: 0,
+      hit(x, y) { return this.spinLeft <= 0 && near(this.p, x, y, 44); },  // big target: it's quick
+      tap(w) {
+        this.spinLeft = 0.9; this.tapAt = this.age; this.tapOwner = {};
+        this.spinLine = pick([['🎙 CROFTY', 'And he\'s spun it! Lovely recovery though.'], ['📻 TEAM RADIO', 'I\'ve lost the car! I\'ve lost the car!'], ['🎙 BRUNDLE', 'Oh, that\'s a big moment.']]);
+      },
       update(dt, w, k) {
+        if (this.spinLeft > 0) {
+          this.spinLeft -= dt; this.spin += dt * 16;
+          if (this.p) smoke.push({ x: this.p.x, y: this.p.y, age: 0, r: rand(3, 6) });
+        }
+        for (const sm of smoke) sm.age += dt;
         // Ease-in sweep round the star on a slightly wider orbit, then spear off-screen.
         const sweep = Math.pow(k, 1.5) * laps * TAU;
         let r = w.R * (f1.orbit + dr + (1.08 - f1.orbit) * ease(k * 4));
@@ -138,7 +148,8 @@ const redbull = {
         w.planetGlow.f1 = Math.max(w.planetGlow.f1 || 0, 1 - k * 5);
       },
       draw(ctx, w, layer) {
-        if (layer === 'hud' && radio) caption(ctx, w, { owner: this,label: '📻 ' + radio[0], text: radio[1], color: RB.yellow, k: clamp(this.age / 4) });
+        if (layer === 'hud' && this.tapOwner) caption(ctx, w, { owner: this.tapOwner, label: this.spinLine[0], text: this.spinLine[1], color: RB.yellow, k: clamp((this.age - this.tapAt) / 3) });
+        else if (layer === 'hud' && radio) caption(ctx, w, { owner: this, label: '📻 ' + radio[0], text: radio[1], color: RB.yellow, k: clamp(this.age / 4) });
         if (layer !== 'front' || !this.p) return;
         for (const [col, off, lw] of [[lv.trail[0], -1, 2], [lv.trail[1], 1, 1.2]]) {
           for (let i = 1; i < trail.length; i++) {
@@ -146,7 +157,12 @@ const redbull = {
             ctx.beginPath(); ctx.moveTo(trail[i - 1].x, trail[i - 1].y + off); ctx.lineTo(trail[i].x, trail[i].y + off); ctx.stroke();
           }
         }
-        drawCar(ctx, this.p.x, this.p.y, this.heading, Math.max(24, w.R * 0.1), lv);
+        for (const sm of smoke) {
+          const sk = sm.age / 1.2; if (sk >= 1) continue;
+          ctx.fillStyle = `rgba(200,200,210,${0.35 * (1 - sk)})`;
+          ctx.beginPath(); ctx.arc(sm.x, sm.y, sm.r * (1 + sk * 3), 0, TAU); ctx.fill();
+        }
+        drawCar(ctx, this.p.x, this.p.y, this.heading + this.spin, Math.max(24, w.R * 0.1), lv);
       },
     });
   },
@@ -188,8 +204,8 @@ const lightsout = {
             ctx.restore();
           }
         }
-        if (t >= go && t < go + 3) caption(ctx, w, { owner: this,label: '🎙 CROFTY', text: 'IT\'S LIGHTS OUT AND AWAY WE GO!', color: '#ff1e1e', k: (t - go) / 3 });
-        if (t >= go + raceDur * 0.75) caption(ctx, w, { owner: this,label: '🏁 P1', text: 'MAX VERSTAPPEN. Simply lovely.', color: RB.yellow, k: clamp((t - go - raceDur * 0.75) / (this.dur - go - raceDur * 0.75)) });
+        if (t >= go && t < go + 3) caption(ctx, w, { owner: this, label: '🎙 CROFTY', text: 'IT\'S LIGHTS OUT AND AWAY WE GO!', color: '#ff1e1e', k: (t - go) / 3 });
+        if (t >= go + raceDur * 0.75) caption(ctx, w, { owner: this, label: '🏁 P1', text: 'MAX VERSTAPPEN. Simply lovely.', color: RB.yellow, k: clamp((t - go - raceDur * 0.75) / (this.dur - go - raceDur * 0.75)) });
       },
     });
   },
@@ -221,7 +237,7 @@ const radio = {
     const [who, line] = pick(RADIO);
     return timed(4.5, {
       update(dt, w, k) { w.planetGlow.f1 = env(k) * 0.8; },
-      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { owner: this,label: '📻 ' + who, text: line, color: RB.yellow, k: this.age / this.dur }); },
+      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { owner: this, label: '📻 ' + who, text: line, color: RB.yellow, k: this.age / this.dur }); },
     });
   },
 };
@@ -255,7 +271,7 @@ const pendulum = {
           w.sunGain = 1 + 0.3 * (1 - k); w.orbitGlow = 0.2 * (1 - k);
         }
       },
-      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { owner: this,label: '♪ NOW PLAYING', text: `Pendulum · ${track}`, color: '#22d3ee', k: this.age / this.dur }); },
+      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { owner: this, label: '♪ NOW PLAYING', text: `Pendulum · ${track}`, color: '#22d3ee', k: this.age / this.dur }); },
     });
   },
 };
@@ -310,28 +326,75 @@ const pivot = {
 
 // ---- ISS crossing ------------------------------------------------------------
 
+// Particle bursts for things that get tapped and blow up.
+function burst(list, x, y, colors, n = 26, speed = 90) {
+  for (let i = 0; i < n; i++) {
+    const an = rand(0, TAU), v = rand(0.2, 1) * speed;
+    list.push({ x, y, vx: Math.cos(an) * v, vy: Math.sin(an) * v, r: rand(0.8, 2.4), c: pick(colors), age: 0, life: rand(0.6, 1.4), spin: rand(-8, 8) });
+  }
+}
+function stepBurst(list, dt) {
+  for (const d of list) { d.age += dt; d.x += d.vx * dt; d.y += d.vy * dt; d.vx *= 0.985; d.vy = d.vy * 0.985 + 12 * dt; }
+}
+function drawBurst(ctx, list) {
+  for (const d of list) {
+    const k = d.age / d.life; if (k >= 1) continue;
+    ctx.fillStyle = rgba(d.c, 1 - k);
+    ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.age * d.spin);
+    ctx.fillRect(-d.r, -d.r * 0.5, d.r * 2, d.r); ctx.restore();
+  }
+}
+const near = (o, x, y, r = 26) => o && Math.hypot(o.x - x, o.y - y) < r;
+
 const iss = {
   id: 'iss', weight: 2,
   create(w) {
     const ltr = Math.random() < 0.5;
     const y0 = rand(0.06, 0.2) * w.H, y1 = y0 + rand(-0.06, 0.08) * w.H;
+    const bits = [];
+    const said = {};
     return timed(rand(7, 9), {
+      fate: null, fateAt: 0, climb: 0,
+      hit(x, y) { return !this.fate && near(this.p, x, y, 30); },
+      tap(w) {
+        this.fate = Math.random() < 0.55 ? 'boom' : 'reboost';
+        this.fateAt = this.age;
+        if (this.fate === 'boom') { burst(bits, this.p.x, this.p.y, ['#ffffff', '#c8d2e6', '#96afe6', '#ffb347', '#ff4040'], 40, 120); w.flash = { color: '#ffffff', a: 0.15 }; }
+        this.dur = Math.max(this.dur, this.age + 3.5);
+      },
+      update(dt, w) {
+        stepBurst(bits, dt);
+        if (this.fate === 'reboost') this.climb += dt * 140 * (1 + (this.age - this.fateAt) * 2);
+      },
       draw(ctx, w, layer) {
-        if (layer !== 'sky') return;
-        const k = this.age / this.dur;
-        const x = ltr ? -40 + (w.W + 80) * k : w.W + 40 - (w.W + 80) * k;
-        const y = y0 + (y1 - y0) * k;
-        const s = Math.max(1, w.R / 220);
-        ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
-        ctx.fillStyle = 'rgba(200,210,230,0.9)'; ctx.fillRect(-11, -0.6, 22, 1.2);  // truss
-        ctx.fillStyle = 'rgba(150,175,230,0.85)';
-        for (const px of [-10, -6, 4, 8]) { ctx.fillRect(px, -5, 2.5, 4); ctx.fillRect(px, 1, 2.5, 4); }  // solar arrays
-        ctx.fillStyle = 'rgba(235,235,240,1)'; ctx.fillRect(-2, -1.5, 4, 3);  // modules
-        if (Math.floor(this.age * 1.5) % 2 === 0) { ctx.fillStyle = '#ff4040'; ctx.beginPath(); ctx.arc(11, 0, 1.3, 0, TAU); ctx.fill(); }
-        ctx.restore();
-        ctx.font = "10px 'JetBrains Mono', monospace"; ctx.textAlign = 'center';
-        ctx.fillStyle = `rgba(200,215,240,${0.55 * env(k, 0.1, 0.1)})`;
-        ctx.fillText('ISS · 27,600 km/h', x, y + 16 * s);
+        const k = Math.min(1, this.age / (this.fate ? this.age + 1 : this.dur));
+        if (layer === 'sky' && this.fate !== 'boom') {
+          const kk = this.age / this.dur;
+          const x = ltr ? -40 + (w.W + 80) * kk : w.W + 40 - (w.W + 80) * kk;
+          const y = y0 + (y1 - y0) * kk - this.climb;
+          this.p = { x, y };
+          const s = Math.max(1, w.R / 220);
+          ctx.save(); ctx.translate(x, y); ctx.scale(s, s);
+          if (this.fate === 'reboost') {  // engine burn
+            ctx.fillStyle = 'rgba(255,170,60,0.9)'; ctx.beginPath(); ctx.ellipse(0, 6, 1.6, 4 + Math.random() * 3, 0, 0, TAU); ctx.fill();
+          }
+          ctx.fillStyle = 'rgba(200,210,230,0.9)'; ctx.fillRect(-11, -0.6, 22, 1.2);  // truss
+          ctx.fillStyle = 'rgba(150,175,230,0.85)';
+          for (const px of [-10, -6, 4, 8]) { ctx.fillRect(px, -5, 2.5, 4); ctx.fillRect(px, 1, 2.5, 4); }  // solar arrays
+          ctx.fillStyle = 'rgba(235,235,240,1)'; ctx.fillRect(-2, -1.5, 4, 3);  // modules
+          if (Math.floor(this.age * 1.5) % 2 === 0) { ctx.fillStyle = '#ff4040'; ctx.beginPath(); ctx.arc(11, 0, 1.3, 0, TAU); ctx.fill(); }
+          ctx.restore();
+          ctx.font = "10px 'JetBrains Mono', monospace"; ctx.textAlign = 'center';
+          ctx.fillStyle = `rgba(200,215,240,${0.55 * env(kk, 0.1, 0.1)})`;
+          ctx.fillText(this.fate ? 'ISS · reboost burn' : 'ISS · 27,600 km/h', x, y + 16 * s);
+        }
+        if (layer === 'front') drawBurst(ctx, bits);
+        if (layer === 'hud' && this.fate) {
+          said.o ??= {};
+          const kc = (this.age - this.fateAt) / 3.5;
+          if (this.fate === 'boom') caption(ctx, w, { owner: said.o, label: '🛰 APOLLO 13', text: 'Houston, we\'ve had a problem.', color: '#ffb347', k: kc });
+          else caption(ctx, w, { owner: said.o, label: '🛰 ISS', text: 'Reboost burn. Have a nice day.', color: '#96afe6', k: kc });
+        }
       },
     });
   },
@@ -368,7 +431,7 @@ const storm = {
         } else path = null;
       },
       draw(ctx, w, layer) {
-        if (layer === 'hud' && say) caption(ctx, w, { owner: this,label: '⚡ STORM', text: 'Purple pride.', color: STORM.gold, k: this.age / this.dur });
+        if (layer === 'hud' && say) caption(ctx, w, { owner: this, label: '⚡ STORM', text: 'Purple pride.', color: STORM.gold, k: this.age / this.dur });
         if (layer !== 'front' || !path) return;
         for (const [col, lw, blur] of [[STORM.purple, 6, 18], [STORM.gold, 1.6, 6]]) {
           ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.shadowColor = col; ctx.shadowBlur = blur;
@@ -400,7 +463,7 @@ const bubbles = {
         for (const b of list) { b.age += dt; b.y += b.vy * dt; b.x += Math.sin(b.age * 6 + b.ph) * 0.4; }
       },
       draw(ctx, w, layer) {
-        if (layer === 'hud' && say) caption(ctx, w, { owner: this,label: '🍺 BREWDAY', text: 'Fermentation: vigorous.', color: '#d9a441', k: this.age / this.dur });
+        if (layer === 'hud' && say) caption(ctx, w, { owner: this, label: '🍺 BREWDAY', text: 'Fermentation: vigorous.', color: '#d9a441', k: this.age / this.dur });
         if (layer !== 'front') return;
         for (const b of list) {
           const k = b.age / b.life;
@@ -439,6 +502,8 @@ const hyperspace = {
     const y = rand(0.15, 0.55) * w.H;
     return timed(3.6, {
       big: true,
+      hit(x, yy) { return !this.tapOwner && this.age < 1.6 && near(this.p, x, yy, 34); },
+      tap() { this.tapOwner = {}; this.tapAt = this.age; },
       update(dt, w) {
         const t = this.age;
         w.streak = t < 1.5 ? ease(t / 1.5) : t < 1.8 ? 1 : Math.max(0, 1 - (t - 1.8) / 1.0);
@@ -448,9 +513,11 @@ const hyperspace = {
         const t = this.age;
         if (layer === 'front' && t < 1.6) {
           const x = -40 + (w.W * 0.55) * Math.pow(t / 1.6, 2.2);
+          this.p = { x, y };
           drawFalcon(ctx, x, y, Math.max(1, w.R / 200), clamp(t));
         }
-        if (layer === 'hud') caption(ctx, w, { owner: this,label: '✦', text: 'Punch it, Chewie.', color: '#cfe6ff', k: t / this.dur });
+        if (layer === 'hud' && this.tapOwner) caption(ctx, w, { owner: this.tapOwner, label: '✦ HAN', text: 'I\'ve got a bad feeling about this.', color: '#cfe6ff', k: clamp((t - this.tapAt) / (this.dur - this.tapAt)) });
+        else if (layer === 'hud') caption(ctx, w, { owner: this, label: '✦', text: 'Punch it, Chewie.', color: '#cfe6ff', k: t / this.dur });
       },
     });
   },
@@ -479,8 +546,8 @@ const astrophage = {
           }
         }
         if (layer === 'hud') {
-          if (t < 4.8) caption(ctx, w, { owner: this,label: '🚀 HAIL MARY', text: '...Astrophage?', color: '#ff8a65', k: clamp((t - 1.2) / 3.6) });
-          else caption(ctx, w, { owner: this,label: '🕷 ROCKY', text: 'Fist my bump. ✊', color: '#ff8a65', k: clamp((t - 4.8) / 2.7) });
+          if (t < 4.8) caption(ctx, w, { owner: this, label: '🚀 HAIL MARY', text: '...Astrophage?', color: '#ff8a65', k: clamp((t - 1.2) / 3.6) });
+          else caption(ctx, w, { owner: this, label: '🕷 ROCKY', text: 'Fist my bump. ✊', color: '#ff8a65', k: clamp((t - 4.8) / 2.7) });
         }
       },
     });
@@ -494,11 +561,26 @@ const voyager = {
   create(w) {
     const x0 = rand(0.55, 0.8) * w.W, y0 = rand(0.55, 0.75) * w.H;
     const vx = rand(14, 22) * (Math.random() < 0.5 ? 1 : -1), vy = -rand(4, 10);
+    const notes = [];
     return timed(9, {
+      hit(x, y) { return near(this.p, x, y, 30); },
+      tap(w) {
+        this.tapOwner = {}; this.tapAt = this.age; this.dur = Math.max(this.dur, this.age + 4);
+        this.track = pick(['Johnny B. Goode · Chuck Berry', 'Greetings in 55 languages', 'Brandenburg Concerto No. 2 · Bach', 'The sounds of Earth']);
+        for (let i = 0; i < 8; i++) notes.push({ x: this.p.x, y: this.p.y, vx: rand(-20, 20), vy: -rand(20, 45), age: -i * 0.15, ch: pick(['♪', '♫', '♩']) });
+      },
+      update(dt) { for (const n of notes) { n.age += dt; if (n.age > 0) { n.x += n.vx * dt; n.y += n.vy * dt; } } },
       draw(ctx, w, layer) {
+        if (layer === 'front') for (const n of notes) {
+          if (n.age < 0 || n.age > 2.2) continue;
+          ctx.font = '14px Inter, system-ui, sans-serif'; ctx.textAlign = 'center';
+          ctx.fillStyle = `rgba(255,215,120,${1 - n.age / 2.2})`; ctx.fillText(n.ch, n.x, n.y);
+        }
+        if (layer === 'hud' && this.tapOwner) caption(ctx, w, { owner: this.tapOwner, label: '💿 GOLDEN RECORD', text: this.track, color: '#d4af37', k: clamp((this.age - this.tapAt) / 4) });
         if (layer !== 'sky') return;
         const k = this.age / this.dur, a = env(k, 0.15, 0.2);
         const x = x0 + vx * this.age, y = y0 + vy * this.age;
+        this.p = { x, y: y + 4 };
         ctx.save(); ctx.translate(x, y);
         ctx.strokeStyle = `rgba(220,225,235,${a})`; ctx.lineWidth = 1;
         ctx.beginPath(); ctx.arc(0, 0, 5, Math.PI * 0.15, Math.PI * 0.85); ctx.stroke();  // dish
@@ -833,11 +915,23 @@ const eagle = {
   id: 'eagle', weight: 1,
   create(w) {
     title('EAGLE!', '#22d3ee', 1800);
-    const y = rand(0.15, 0.4) * w.H;
+    const y0 = rand(0.15, 0.4) * w.H;
+    const feathers = [];
     return timed(3.2, {
+      fall: 0,
+      hit(x, y) { return !this.downAt && near(this.p, x, y, 30); },
+      tap(w) {
+        this.downAt = this.age; this.tapOwner = {}; this.dur = Math.max(this.dur, this.age + 3);
+        burst(feathers, this.p.x, this.p.y, ['#e6f1ff', '#cfe6ff'], 12, 40);
+      },
+      update(dt) { stepBurst(feathers, dt); if (this.downAt) this.fall += dt * 260 * (this.age - this.downAt + 0.3); },
       draw(ctx, w, layer) {
+        if (layer === 'front') drawBurst(ctx, feathers);
+        if (layer === 'hud' && this.tapOwner) { caption(ctx, w, { owner: this.tapOwner, label: '🩺 TURK', text: 'The eagle has... not landed.', color: '#22d3ee', k: clamp((this.age - this.downAt) / 3) }); return; }
         if (layer === 'front') {  // a little bird with very committed flapping
-          const k = this.age / this.dur, x = -30 + (w.W + 60) * k, flap = Math.sin(this.age * 22) * 7;
+          const k = this.downAt ? this.downAt / 3.2 : this.age / 3.2, x = -30 + (w.W + 60) * k, flap = this.downAt ? 7 : Math.sin(this.age * 22) * 7;
+          const y = y0 + this.fall;
+          this.p = { x, y };
           ctx.strokeStyle = 'rgba(230,241,255,0.85)'; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.moveTo(x - 12, y - flap); ctx.quadraticCurveTo(x - 5, y - 2, x, y); ctx.quadraticCurveTo(x + 5, y - 2, x + 12, y - flap); ctx.stroke();
         }
@@ -865,21 +959,35 @@ const enterprise = {
     const y = rand(0.12, 0.3) * w.H;
     const line = pick(['Engage.', 'Make it so.', 'Tea. Earl Grey. Hot.']);
     return timed(5.5, {
-      big: true,
-      update(dt, w) { const t = this.age; if (t > 3.6 && t < 3.9) w.flash = { color: '#bfe6ff', a: 0.25 * (1 - (t - 3.6) / 0.3) }; },
+      big: true, shield: 0,
+      hit(x, y) { return !this.alert && this.age < 3.4 && near(this.p, x, y, 40); },
+      tap(w) { this.alert = true; this.shield = 1.2; this.tapOwner = {}; this.tapAt = this.age; },
+      update(dt, w) {
+        if (this.alert) {
+          this.shield -= dt;
+          w.flash = { color: '#ff1e1e', a: 0.06 * (Math.sin(this.age * 12) > 0 ? 1 : 0) };
+          if (this.shield <= 0 && this.age < 3.6) this.age = 3.6;  // punch it
+        }
+        const t = this.age; if (t > 3.6 && t < 3.9) w.flash = { color: '#bfe6ff', a: 0.25 * (1 - (t - 3.6) / 0.3) }; },
       draw(ctx, w, layer) {
         const t = this.age, s = Math.max(1, w.R / 220);
         if (layer === 'front') {
           if (t < 3.6) {  // glide in, slow to a stop
             const x = -60 + (w.W * 0.35 + 60) * ease(t / 3);
+            this.p = { x: x + 4 * s, y: y + 2 * s };
             drawEnterprise(ctx, x, y, s, clamp(t * 2));
+            if (this.shield > 0) {
+              ctx.strokeStyle = `rgba(120,200,255,${0.5 * clamp(this.shield)})`; ctx.lineWidth = 2;
+              ctx.beginPath(); ctx.ellipse(x, y + 2 * s, 34 * s, 17 * s, 0, 0, TAU); ctx.stroke();
+            }
           } else if (t < 3.9) {  // stretch and gone
             const k = (t - 3.6) / 0.3, x = w.W * 0.35 + k * w.W;
             ctx.strokeStyle = `rgba(190,230,255,${1 - k})`; ctx.lineWidth = 3 * s;
             ctx.beginPath(); ctx.moveTo(w.W * 0.35 - 20, y); ctx.lineTo(x, y); ctx.stroke();
           }
         }
-        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🖖 PICARD', text: line, color: '#7fd4ff', k: t / this.dur });
+        if (layer === 'hud' && this.tapOwner) caption(ctx, w, { owner: this.tapOwner, label: '🖖 PICARD', text: 'Red alert! Shields up!', color: '#ff1e1e', k: clamp((t - this.tapAt) / 2.5) });
+        else if (layer === 'hud') caption(ctx, w, { owner: this, label: '🖖 PICARD', text: line, color: '#7fd4ff', k: t / this.dur });
       },
     });
   },
@@ -895,9 +1003,24 @@ const jwst = {
       const sx = -q - r; if (Math.max(Math.abs(q), Math.abs(r), Math.abs(sx)) > 2 || (q === 0 && r === 0)) continue;
       hexes.push({ q, r, side: q < -1 ? -1 : q > 1 ? 1 : 0 });
     }
+    const field = [];
     return timed(6, {
+      p: { x, y },
+      hit(px, py) { return !this.tapOwner && near({ x, y }, px, py, 40); },
+      tap(w) {
+        this.tapOwner = {}; this.tapAt = this.age; this.dur = Math.max(this.dur, this.age + 4);
+        for (let i = 0; i < 45; i++) field.push({ x: x + rand(-1, 1) * w.R * 0.5, y: y + rand(0.3, 1.6) * w.R * 0.25, r: rand(0.6, 2.4), c: pick(['#ffd27a', '#ff9a6b', '#cfe6ff', '#a78bfa', '#ffffff']), rot: rand(0, Math.PI), e: rand(0.3, 1) });
+      },
       draw(ctx, w, layer) {
         const t = this.age, k = t / this.dur, a = env(k, 0.1, 0.2), hs = 3.2 * Math.max(1, w.R / 260);
+        if (layer === 'sky' && this.tapOwner) {
+          const fa = env((t - this.tapAt) / (this.dur - this.tapAt), 0.2, 0.3);
+          for (const g of field) {
+            ctx.fillStyle = rgba(g.c, 0.8 * fa);
+            ctx.beginPath(); ctx.ellipse(g.x, g.y, g.r * 2, g.r * 2 * g.e, g.rot, 0, TAU); ctx.fill();
+          }
+        }
+        if (layer === 'hud' && this.tapOwner) { caption(ctx, w, { owner: this.tapOwner, label: '📸 JWST', text: 'First Deep Field: SMACS 0723. Galaxies for days.', color: '#d4af37', k: clamp((t - this.tapAt) / 4) }); return; }
         if (layer === 'sky') {
           for (const h of hexes) {
             const fold = h.side ? 1 - ease(clamp((t - 0.8) / 1.6)) : 0;  // wings fold in

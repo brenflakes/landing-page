@@ -28,6 +28,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     get t() { return t; }, get W() { return W; }, get H() { return H; },
     get cx() { return cx; }, get cy() { return cy; }, get R() { return R; }, get tilt() { return tilt; },
     STAR, PLANETS,
+    get active() { return active; },
     planet: (id) => PLANETS.find(p => p.id === id),
     pos: (node) => posOf(node),
     spawnPacket: (...a) => spawnPacket(...a),
@@ -331,10 +332,12 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
   // ---- pointer: tap a planet and it does its thing --------------------------
   let hover = null;
   const cooldown = {};
-  function planetAt(ev) {
+  // What's under the pointer: a tappable event (ISS, car, Enterprise...) wins over planets.
+  function targetAt(ev) {
     const rect = canvas.getBoundingClientRect();
     const x = ev.clientX - rect.left, y = ev.clientY - rect.top;
-    if (Math.hypot(x - cx, y - cy) < Math.max(24, R * 0.07)) return STAR;
+    for (let i = active.length - 1; i >= 0; i--) if (active[i].hit?.(x, y, world)) return { event: active[i], x, y };
+    if (Math.hypot(x - cx, y - cy) < Math.max(24, R * 0.07)) return { node: STAR };
     let best = null, bestD = Infinity;
     for (const p of PLANETS) {
       const q = planetPos(p);
@@ -342,12 +345,19 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
       const hit = Math.max(22, planetSize(p, q.depth) * 3);  // generous for thumbs
       if (d < hit && d < bestD) { best = p; bestD = d; }
     }
-    return best;
+    return best ? { node: best } : null;
   }
-  const onMove = (ev) => { hover = planetAt(ev); canvas.style.cursor = hover ? 'pointer' : 'default'; };
+  const onMove = (ev) => {
+    const tgt = targetAt(ev);
+    hover = tgt?.node || null;
+    canvas.style.cursor = tgt ? 'pointer' : 'default';
+  };
   const onClick = (ev) => {
-    const p = planetAt(ev);
-    if (!p || (cooldown[p.id] || 0) > t) return;
+    const tgt = targetAt(ev);
+    if (!tgt) return;
+    if (tgt.event) { tgt.event.tap(world, tgt.x, tgt.y); return; }
+    const p = tgt.node;
+    if ((cooldown[p.id] || 0) > t) return;
     const def = PLANET_EVENTS[p.id];
     if (def) { fire(def); cooldown[p.id] = t + (def.cooldown ?? 1.5); }
   };
