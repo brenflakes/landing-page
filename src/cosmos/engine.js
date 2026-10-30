@@ -42,6 +42,8 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     planetGlow: {},  // id -> 0..1 extra halo
   };
 
+  if (force) window.__cosmos = world;  // test hook, only with ?force
+
   // ---- layout -------------------------------------------------------------
   function resize() {
     dpr = Math.min(window.devicePixelRatio || 1, 2);

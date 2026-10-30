@@ -14,7 +14,14 @@ const STORM = { purple: '#632390', gold: '#ffc72c' };
 // ---- shared helpers ---------------------------------------------------------
 
 // Radio-style caption, typed out. Default spot is just above the solar system.
-function caption(ctx, w, { label, text, color = '#58a6ff', k, x, y, size = 13 }) {
+// There is one caption slot: the newest event to speak takes it, and anything it pre-empted
+// goes quiet for good. Otherwise rapid taps stacked five unreadable captions on top of each other.
+let slot = null;
+function caption(ctx, w, { owner, label, text, color = '#58a6ff', k, x, y, size = 13 }) {
+  if (owner) {
+    if (!owner._spoke) { owner._spoke = true; slot = owner; }
+    if (slot !== owner) return;
+  }
   const a = env(k, 0.08, 0.2);
   if (a <= 0) return;
   x ??= w.cx;
@@ -28,7 +35,7 @@ function caption(ctx, w, { label, text, color = '#58a6ff', k, x, y, size = 13 })
   const bw = tw + lw + 24, bh = size + 14;
   if (bw > w.W - 16 && size > 8) {  // narrow phones: shrink to fit rather than clip
     ctx.restore();
-    return caption(ctx, w, { label, text, color, k, x, y, size: Math.max(8, Math.floor(size * (w.W - 16) / bw)) });
+    return caption(ctx, w, { owner: this,label, text, color, k, x, y, size: Math.max(8, Math.floor(size * (w.W - 16) / bw)) });
   }
   ctx.fillStyle = `rgba(5,7,12,${0.75 * a})`;
   ctx.strokeStyle = rgba(color, 0.5 * a); ctx.lineWidth = 1;
@@ -113,7 +120,7 @@ const redbull = {
     const start = w.pos(f1);
     const lv = opts.livery || LIVERIES[w.count('car') % LIVERIES.length];
     const a0 = start.ang + (opts.da || 0), laps = opts.laps || rand(1.1, 1.6), dr = opts.dr || 0;
-    const radio = opts.quiet ? null : Math.random() < 0.6 ? pick(RADIO) : null;
+    const radio = opts.quiet || w.count('car') > 0 ? null : Math.random() < 0.6 ? pick(RADIO) : null;
     const trail = [];
     let prev = null;
     return timed(opts.dur || rand(5, 6.5), {
@@ -131,7 +138,7 @@ const redbull = {
         w.planetGlow.f1 = Math.max(w.planetGlow.f1 || 0, 1 - k * 5);
       },
       draw(ctx, w, layer) {
-        if (layer === 'hud' && radio) caption(ctx, w, { label: '📻 ' + radio[0], text: radio[1], color: RB.yellow, k: clamp(this.age / 4) });
+        if (layer === 'hud' && radio) caption(ctx, w, { owner: this,label: '📻 ' + radio[0], text: radio[1], color: RB.yellow, k: clamp(this.age / 4) });
         if (layer !== 'front' || !this.p) return;
         for (const [col, off, lw] of [[lv.trail[0], -1, 2], [lv.trail[1], 1, 1.2]]) {
           for (let i = 1; i < trail.length; i++) {
@@ -181,18 +188,25 @@ const lightsout = {
             ctx.restore();
           }
         }
-        if (t >= go && t < go + 3) caption(ctx, w, { label: '🎙 CROFTY', text: 'IT\'S LIGHTS OUT AND AWAY WE GO!', color: '#ff1e1e', k: (t - go) / 3 });
-        if (t >= go + raceDur * 0.75) caption(ctx, w, { label: '🏁 P1', text: 'MAX VERSTAPPEN. Simply lovely.', color: RB.yellow, k: clamp((t - go - raceDur * 0.75) / (this.dur - go - raceDur * 0.75)) });
+        if (t >= go && t < go + 3) caption(ctx, w, { owner: this,label: '🎙 CROFTY', text: 'IT\'S LIGHTS OUT AND AWAY WE GO!', color: '#ff1e1e', k: (t - go) / 3 });
+        if (t >= go + raceDur * 0.75) caption(ctx, w, { owner: this,label: '🏁 P1', text: 'MAX VERSTAPPEN. Simply lovely.', color: RB.yellow, k: clamp((t - go - raceDur * 0.75) / (this.dur - go - raceDur * 0.75)) });
       },
     });
   },
 };
 
-// Tapping F1: another car (in the next livery), or with four already out, the race start.
+// Tapping F1: another car (in the next livery). Five taps inside 8 seconds starts the race.
+let f1taps = [];
 const f1tap = {
-  id: 'f1tap', weight: 0, cooldown: 0.6,
+  id: 'f1tap', weight: 0, cooldown: 0.4,
   create(w) {
-    if (w.count('car') >= 4 && !w.count('lightsout')) { w.fire(lightsout); return { update: () => false }; }
+    const now = w.t;
+    f1taps = f1taps.filter(t => now - t < 8).concat(now);
+    if (f1taps.length >= 5 && !w.count('lightsout')) {
+      f1taps = [];
+      w.fire(lightsout);
+      return { update: () => false };
+    }
     return redbull.create(w);
   },
 };
@@ -203,7 +217,7 @@ const radio = {
     const [who, line] = pick(RADIO);
     return timed(4.5, {
       update(dt, w, k) { w.planetGlow.f1 = env(k) * 0.8; },
-      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { label: '📻 ' + who, text: line, color: RB.yellow, k: this.age / this.dur }); },
+      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { owner: this,label: '📻 ' + who, text: line, color: RB.yellow, k: this.age / this.dur }); },
     });
   },
 };
@@ -237,7 +251,7 @@ const pendulum = {
           w.sunGain = 1 + 0.3 * (1 - k); w.orbitGlow = 0.2 * (1 - k);
         }
       },
-      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { label: '♪ NOW PLAYING', text: `Pendulum · ${track}`, color: '#22d3ee', k: this.age / this.dur }); },
+      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { owner: this,label: '♪ NOW PLAYING', text: `Pendulum · ${track}`, color: '#22d3ee', k: this.age / this.dur }); },
     });
   },
 };
@@ -350,7 +364,7 @@ const storm = {
         } else path = null;
       },
       draw(ctx, w, layer) {
-        if (layer === 'hud' && say) caption(ctx, w, { label: '⚡ STORM', text: 'Purple pride.', color: STORM.gold, k: this.age / this.dur });
+        if (layer === 'hud' && say) caption(ctx, w, { owner: this,label: '⚡ STORM', text: 'Purple pride.', color: STORM.gold, k: this.age / this.dur });
         if (layer !== 'front' || !path) return;
         for (const [col, lw, blur] of [[STORM.purple, 6, 18], [STORM.gold, 1.6, 6]]) {
           ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.shadowColor = col; ctx.shadowBlur = blur;
@@ -382,7 +396,7 @@ const bubbles = {
         for (const b of list) { b.age += dt; b.y += b.vy * dt; b.x += Math.sin(b.age * 6 + b.ph) * 0.4; }
       },
       draw(ctx, w, layer) {
-        if (layer === 'hud' && say) caption(ctx, w, { label: '🍺 BREWDAY', text: 'Fermentation: vigorous.', color: '#d9a441', k: this.age / this.dur });
+        if (layer === 'hud' && say) caption(ctx, w, { owner: this,label: '🍺 BREWDAY', text: 'Fermentation: vigorous.', color: '#d9a441', k: this.age / this.dur });
         if (layer !== 'front') return;
         for (const b of list) {
           const k = b.age / b.life;
@@ -432,7 +446,7 @@ const hyperspace = {
           const x = -40 + (w.W * 0.55) * Math.pow(t / 1.6, 2.2);
           drawFalcon(ctx, x, y, Math.max(1, w.R / 200), clamp(t));
         }
-        if (layer === 'hud') caption(ctx, w, { label: '✦', text: 'Punch it, Chewie.', color: '#cfe6ff', k: t / this.dur });
+        if (layer === 'hud') caption(ctx, w, { owner: this,label: '✦', text: 'Punch it, Chewie.', color: '#cfe6ff', k: t / this.dur });
       },
     });
   },
@@ -461,8 +475,8 @@ const astrophage = {
           }
         }
         if (layer === 'hud') {
-          if (t < 4.8) caption(ctx, w, { label: '🚀 HAIL MARY', text: '...Astrophage?', color: '#ff8a65', k: clamp((t - 1.2) / 3.6) });
-          else caption(ctx, w, { label: '🕷 ROCKY', text: 'Fist my bump. ✊', color: '#ff8a65', k: clamp((t - 4.8) / 2.7) });
+          if (t < 4.8) caption(ctx, w, { owner: this,label: '🚀 HAIL MARY', text: '...Astrophage?', color: '#ff8a65', k: clamp((t - 1.2) / 3.6) });
+          else caption(ctx, w, { owner: this,label: '🕷 ROCKY', text: 'Fist my bump. ✊', color: '#ff8a65', k: clamp((t - 4.8) / 2.7) });
         }
       },
     });
