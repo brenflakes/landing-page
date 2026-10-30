@@ -195,21 +195,25 @@ const lightsout = {
   },
 };
 
-// Tapping F1: another car (in the next livery). Five taps inside 8 seconds starts the race.
-let f1taps = [];
-const f1tap = {
-  id: 'f1tap', weight: 0, cooldown: 0.4,
-  create(w) {
-    const now = w.t;
-    f1taps = f1taps.filter(t => now - t < 8).concat(now);
-    if (f1taps.length >= 5 && !w.count('lightsout')) {
-      f1taps = [];
-      w.fire(lightsout);
-      return { update: () => false };
-    }
-    return redbull.create(w);
-  },
-};
+// Mash a planet: each tap fires its normal event, and five taps inside 8 seconds fires its
+// combo instead (F1 -> the race, Storm -> a supercell, and so on).
+function combo(base, big, n = 5, cooldown = 0.4) {
+  let taps = [];
+  return {
+    id: base.id + '-tap', weight: 0, cooldown,
+    create(w) {
+      taps = taps.filter(t => w.t - t < 8).concat(w.t);
+      if (taps.length >= n && !w.count(big.id)) {
+        taps = [];
+        w.fire(big);
+        return { update: () => false };
+      }
+      return base.create(w);
+    },
+  };
+}
+
+const title = (text, color, hold) => window.dispatchEvent(new CustomEvent('cosmos:title', { detail: { text, color, hold } }));
 
 const radio = {
   id: 'radio', weight: 1.5,
@@ -603,10 +607,326 @@ const printing = {
   },
 };
 
+// ---- Combos: what you get for mashing a planet ---------------------------------
+
+// AI x5: HAL takes over the star.
+const hal = {
+  id: 'hal', weight: 0, big: true,
+  create(w) {
+    title('HAL 9000', '#ff2a2a', 3200);
+    return timed(6.5, {
+      kind: 'hal', big: true,
+      update(dt, w, k) {
+        const a = env(k, 0.15, 0.25);
+        if (a > 0.02) w.sunTint = '#ff1a1a';
+        w.sunGain = 1 + a * 0.5 + 0.08 * Math.sin(this.age * 3);
+        w.planetGlow.ai = a;
+      },
+      draw(ctx, w, layer) {
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🔴 HAL', text: 'I\'m sorry, Bren. I\'m afraid I can\'t do that.', color: '#ff2a2a', k: this.age / this.dur });
+      },
+    });
+  },
+};
+
+// Homelab x5: everything drops offline one by one. It was DNS.
+const dns = {
+  id: 'dns', weight: 0, big: true,
+  create(w) {
+    const order = [...w.PLANETS].sort(() => Math.random() - 0.5);
+    let back = false;
+    return timed(6, {
+      kind: 'dns', big: true,
+      update(dt, w) {
+        const t = this.age;
+        order.forEach((p, i) => {
+          const off = clamp((t - i * 0.25) * 3) * (1 - clamp((t - 3.6 - i * 0.08) * 3));
+          w.planetHide[p.id] = off;
+        });
+        w.sunDim = clamp((t - 1.2) * 2) * (1 - clamp((t - 3.4) * 2)) * 0.6;
+        if (t > 3.6 && !back) {
+          back = true;
+          const hl = w.planet('homelab');
+          for (const p of w.PLANETS) if (p !== hl) w.spawnPacket(hl, p, 3, { color: '#34d399', speed: 0.6 });
+        }
+      },
+      draw(ctx, w, layer) {
+        if (layer !== 'hud') return;
+        const t = this.age;
+        if (t < 3.5) caption(ctx, w, { owner: this, label: '🔥 HOMELAB', text: 'Everything is down.', color: '#e10600', k: t / 3.5 });
+        else caption(ctx, w, { owner: this, label: '🔥 HOMELAB', text: 'It was DNS. It\'s always DNS.', color: '#34d399', k: (t - 3.5) / 2.5 });
+      },
+    });
+  },
+};
+
+// Payments x5: the fraud engine has seen enough.
+const blocked = {
+  id: 'blocked', weight: 0, big: true,
+  create(w) {
+    title('DECLINED 05', '#e10600', 2600);
+    const pay = w.planet('payments');
+    w.PLANETS.forEach((p, i) => p !== pay && setTimeout(() => w.spawnPacket(p, pay, 3, { color: '#e10600', speed: 0.5 }), i * 90));
+    return timed(5.5, {
+      kind: 'blocked', big: true,
+      update(dt, w, k) {
+        const siren = (Math.sin(this.age * 10) + 1) / 2 * env(k);
+        for (const p of w.PLANETS) w.planetGlow[p.id] = siren * 0.7;
+        w.flash = { color: '#e10600', a: siren * 0.06 };
+      },
+      draw(ctx, w, layer) {
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🚨 FRAUD TEAM', text: 'Card blocked: unusual activity detected.', color: '#e10600', k: this.age / this.dur });
+      },
+    });
+  },
+};
+
+// 3D printing x5: spaghetti.
+const spaghetti = {
+  id: 'spaghetti', weight: 0, big: true,
+  create(w) {
+    const pr = w.planet('printing');
+    const strands = Array.from({ length: 22 }, () => ({ a: rand(0, TAU), len: rand(30, 90), wob: rand(4, 12), f: rand(0.08, 0.2), ph: rand(0, TAU), w: rand(0.8, 1.6) }));
+    return timed(5, {
+      kind: 'spaghetti', big: true,
+      update(dt, w, k) { w.planetGlow.printing = env(k) * 0.7; },
+      draw(ctx, w, layer) {
+        const t = this.age, k = t / this.dur;
+        if (layer === 'front') {
+          const o = w.pos(pr), grow = ease(clamp(t / 1.8)), a = env(k, 0.05, 0.25);
+          for (const st of strands) {
+            ctx.strokeStyle = rgba('#22d3ee', 0.7 * a); ctx.lineWidth = st.w;
+            ctx.beginPath();
+            const L = st.len * grow * Math.max(0.8, w.R / 300);
+            for (let d = 0; d <= L; d += 3) {
+              const px = o.x + Math.cos(st.a) * d + Math.sin(d * st.f + st.ph + t * 2) * st.wob;
+              const py = o.y + Math.sin(st.a) * d * 0.7 + Math.cos(d * st.f * 1.3 + st.ph) * st.wob;
+              d ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+            }
+            ctx.stroke();
+          }
+        }
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🖨 OCTOPRINT', text: 'Spaghetti detected. Print paused.', color: '#22d3ee', k });
+      },
+    });
+  },
+};
+
+// Homebrew x5: every planet starts bubbling and the star goes amber.
+const beeroclock = {
+  id: 'beeroclock', weight: 0, big: true,
+  create(w) {
+    title('BEER O\'CLOCK', '#d9a441', 2600);
+    const list = [];
+    let spawn = 0;
+    return timed(5.5, {
+      kind: 'beeroclock', big: true,
+      update(dt, w, k) {
+        if (env(k) > 0.05) w.sunTint = '#f0b429';
+        spawn -= dt;
+        if (this.age < 4 && spawn <= 0) {
+          const o = w.pos(pick([w.STAR, ...w.PLANETS]));
+          list.push({ x: o.x + rand(-8, 8), y: o.y - 4, vy: -rand(25, 55), r: rand(1.5, 4.5), ph: rand(0, TAU), life: rand(1.2, 2), age: 0 });
+          spawn = 0.025;
+        }
+        for (const b of list) { b.age += dt; b.y += b.vy * dt; b.x += Math.sin(b.age * 6 + b.ph) * 0.4; }
+      },
+      draw(ctx, w, layer) {
+        if (layer === 'front') for (const b of list) {
+          const k = b.age / b.life;
+          if (k >= 1) continue;
+          ctx.strokeStyle = `rgba(255,220,140,${0.8 * (1 - k * 0.6)})`; ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, TAU); ctx.stroke();
+        }
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🍺 BREWDAY', text: 'It\'s beer o\'clock somewhere.', color: '#d9a441', k: this.age / this.dur });
+      },
+    });
+  },
+};
+
+// Storm x5: a supercell. Bolts everywhere.
+const supercell = {
+  id: 'supercell', weight: 0, big: true,
+  create(w) {
+    title('PURPLE PRIDE', STORM.purple === '#632390' ? '#a46be0' : STORM.purple, 2600);
+    const bolts = [];
+    let next = 0;
+    return timed(5, {
+      kind: 'supercell', big: true,
+      update(dt, w, k) {
+        next -= dt;
+        if (this.age < 4 && next <= 0) {
+          const a = pick([w.STAR, ...w.PLANETS]); let b = pick([w.STAR, ...w.PLANETS]);
+          while (b === a) b = pick([w.STAR, ...w.PLANETS]);
+          bolts.push({ path: bolt(w.pos(a), w.pos(b), w.R * 0.06), age: 0 });
+          next = rand(0.06, 0.2);
+        }
+        for (const b of bolts) b.age += dt;
+        const live = bolts.filter(b => b.age < 0.15).length;
+        if (live) w.flash = { color: STORM.purple, a: 0.05 + live * 0.03 };
+        for (const p of w.PLANETS) w.planetGlow[p.id] = live ? 0.6 : 0;
+      },
+      draw(ctx, w, layer) {
+        if (layer === 'front') for (const b of bolts) {
+          if (b.age >= 0.15) continue;
+          for (const [col, lw, blur] of [[STORM.purple, 5, 16], [STORM.gold, 1.4, 6]]) {
+            ctx.save(); ctx.strokeStyle = col; ctx.lineWidth = lw; ctx.shadowColor = col; ctx.shadowBlur = blur;
+            ctx.beginPath(); b.path.forEach((p, j) => (j ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y))); ctx.stroke(); ctx.restore();
+          }
+        }
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '⚡ MELBOURNE STORM', text: 'Purple Pride.', color: STORM.gold, k: this.age / this.dur });
+      },
+    });
+  },
+};
+
+// Star x5: supernova. Flash, shockwave, everything blasted with packets, then it settles.
+const supernova = {
+  id: 'supernova', weight: 0, big: true,
+  create(w) {
+    let blown = false;
+    return timed(5.5, {
+      kind: 'supernova', big: true,
+      update(dt, w) {
+        const t = this.age;
+        if (t < 1.2) { w.sunGain = 1 + ease(t / 1.2) * 1.4; w.sunTint = t > 0.6 ? '#ffffff' : null; return; }
+        if (!blown) {
+          blown = true;
+          for (let i = 0; i < 3; i++) for (const p of w.PLANETS) w.spawnPacket(w.STAR, p, 3, { color: pick(PALETTE), speed: 0.35 + i * 0.15, size: 3.2 });
+        }
+        const k = (t - 1.2) / 4.3;
+        w.flash = { color: '#ffffff', a: Math.max(0, 0.7 - k * 4) };
+        w.streak = Math.max(0, 0.35 - k);
+        w.sunGain = 2.4 - ease(k) * 1.4;
+        w.orbitGlow = Math.max(0, 1 - k * 2);
+      },
+      draw(ctx, w, layer) {
+        const t = this.age;
+        if (layer === 'front' && t > 1.2) {
+          const k = (t - 1.2) / 2.2;
+          if (k < 1) for (const [m, col] of [[1, '#ffffff'], [0.85, '#58a6ff'], [0.7, '#a78bfa']]) {
+            const r = ease(k) * Math.max(w.W, w.H) * m;
+            ctx.strokeStyle = rgba(col, (1 - k) * 0.6); ctx.lineWidth = 3 * (1 - k) + 1;
+            ctx.beginPath(); ctx.ellipse(w.cx, w.cy, r, r * w.tilt, 0, 0, TAU); ctx.stroke();
+          }
+        }
+        if (layer === 'hud' && t > 1.4) caption(ctx, w, { owner: this, label: '💥', text: 'Okay, maybe that was too many clicks.', color: '#ffffff', k: (t - 1.4) / 4.1 });
+      },
+    });
+  },
+};
+
+// ---- More director events ----------------------------------------------------------
+
+const ninenine = {
+  id: 'ninenine', weight: 1.2,
+  create(w) {
+    const [t1, line] = pick([['NINE-NINE!', 'NINE-NINE!'], ['NOICE.', 'Noice. Toit.'], ['COOL COOL COOL', 'Cool cool cool cool cool. No doubt no doubt.']]);
+    title(t1, '#fbbf24', 2200);
+    return timed(4.5, {
+      draw(ctx, w, layer) { if (layer === 'hud') caption(ctx, w, { owner: this, label: '🚓 99', text: line, color: '#fbbf24', k: this.age / this.dur }); },
+    });
+  },
+};
+
+const eagle = {
+  id: 'eagle', weight: 1,
+  create(w) {
+    title('EAGLE!', '#22d3ee', 1800);
+    const y = rand(0.15, 0.4) * w.H;
+    return timed(3.2, {
+      draw(ctx, w, layer) {
+        if (layer === 'front') {  // a little bird with very committed flapping
+          const k = this.age / this.dur, x = -30 + (w.W + 60) * k, flap = Math.sin(this.age * 22) * 7;
+          ctx.strokeStyle = 'rgba(230,241,255,0.85)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(x - 12, y - flap); ctx.quadraticCurveTo(x - 5, y - 2, x, y); ctx.quadraticCurveTo(x + 5, y - 2, x + 12, y - flap); ctx.stroke();
+        }
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🩺 J.D.', text: 'EAAAGLE!', color: '#22d3ee', k: this.age / this.dur });
+      },
+    });
+  },
+};
+
+function drawEnterprise(ctx, x, y, s, a) {
+  ctx.save(); ctx.translate(x, y); ctx.scale(s, s); ctx.globalAlpha = a;
+  ctx.fillStyle = '#c9cfd8';
+  ctx.beginPath(); ctx.ellipse(10, 0, 14, 5, 0, 0, TAU); ctx.fill();                 // saucer
+  ctx.fillRect(-2, 1, 8, 2.5);                                                       // neck
+  ctx.beginPath(); ctx.ellipse(-8, 4, 10, 3, 0, 0, TAU); ctx.fill();                 // engineering hull
+  ctx.fillRect(-22, -4, 16, 2.2); ctx.fillRect(-22, 8, 16, 2.2);                     // nacelles
+  ctx.fillStyle = '#ff5a3c'; ctx.fillRect(-7, -4, 1.6, 2.2); ctx.fillRect(-7, 8, 1.6, 2.2);  // bussard collectors
+  ctx.fillStyle = '#7fd4ff'; ctx.fillRect(-22, -4.6, 15, 0.9); ctx.fillRect(-22, 7.4, 15, 0.9);  // warp glow
+  ctx.restore();
+}
+
+const enterprise = {
+  id: 'enterprise', weight: 1, big: true,
+  create(w) {
+    const y = rand(0.12, 0.3) * w.H;
+    const line = pick(['Engage.', 'Make it so.', 'Tea. Earl Grey. Hot.']);
+    return timed(5.5, {
+      big: true,
+      update(dt, w) { const t = this.age; if (t > 3.6 && t < 3.9) w.flash = { color: '#bfe6ff', a: 0.25 * (1 - (t - 3.6) / 0.3) }; },
+      draw(ctx, w, layer) {
+        const t = this.age, s = Math.max(1, w.R / 220);
+        if (layer === 'front') {
+          if (t < 3.6) {  // glide in, slow to a stop
+            const x = -60 + (w.W * 0.35 + 60) * ease(t / 3);
+            drawEnterprise(ctx, x, y, s, clamp(t * 2));
+          } else if (t < 3.9) {  // stretch and gone
+            const k = (t - 3.6) / 0.3, x = w.W * 0.35 + k * w.W;
+            ctx.strokeStyle = `rgba(190,230,255,${1 - k})`; ctx.lineWidth = 3 * s;
+            ctx.beginPath(); ctx.moveTo(w.W * 0.35 - 20, y); ctx.lineTo(x, y); ctx.stroke();
+          }
+        }
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🖖 PICARD', text: line, color: '#7fd4ff', k: t / this.dur });
+      },
+    });
+  },
+};
+
+const jwst = {
+  id: 'jwst', weight: 1,
+  create(w) {
+    const x = rand(0.12, 0.88) * w.W, y = rand(0.08, 0.2) * w.H;
+    // 18 hexes: centre ring of 6 and outer ring of 12, unfolding in from the sides.
+    const hexes = [];
+    for (let q = -2; q <= 2; q++) for (let r = -2; r <= 2; r++) {
+      const sx = -q - r; if (Math.max(Math.abs(q), Math.abs(r), Math.abs(sx)) > 2 || (q === 0 && r === 0)) continue;
+      hexes.push({ q, r, side: q < -1 ? -1 : q > 1 ? 1 : 0 });
+    }
+    return timed(6, {
+      draw(ctx, w, layer) {
+        const t = this.age, k = t / this.dur, a = env(k, 0.1, 0.2), hs = 3.2 * Math.max(1, w.R / 260);
+        if (layer === 'sky') {
+          for (const h of hexes) {
+            const fold = h.side ? 1 - ease(clamp((t - 0.8) / 1.6)) : 0;  // wings fold in
+            const hx = x + hs * 1.75 * (h.q + h.r / 2) + h.side * fold * hs * 3;
+            const hy = y + hs * 1.5 * h.r - fold * hs * 2;
+            const glint = Math.exp(-Math.pow((k - 0.6 - h.q * 0.03) * 10, 2));
+            ctx.fillStyle = `rgba(${212 + 40 * glint},${175 + 60 * glint},${55 + 120 * glint},${0.85 * a})`;
+            ctx.beginPath();
+            for (let i = 0; i < 6; i++) { const an = Math.PI / 6 + i * Math.PI / 3; ctx.lineTo(hx + Math.cos(an) * hs, hy + Math.sin(an) * hs); }
+            ctx.closePath(); ctx.fill();
+          }
+        }
+        if (layer === 'hud') caption(ctx, w, { owner: this, label: '🔭 JWST', text: '344 single points of failure. Zero failures.', color: '#d4af37', k });
+      },
+    });
+  },
+};
+
 // Director pool.
-export const EVENTS = [redbull, lightsout, radio, pendulum, pivot, iss, storm, bubbles, hyperspace, astrophage, voyager, approved, homelab, thinking, printing];
+export const EVENTS = [redbull, lightsout, ninenine, eagle, enterprise, jwst, hal, dns, blocked, spaghetti, beeroclock, supercell, supernova, radio, pendulum, pivot, iss, storm, bubbles, hyperspace, astrophage, voyager, approved, homelab, thinking, printing];
 
 // Tap a planet -> its signature event. Tap the star -> the drop.
 export const PLANET_EVENTS = {
-  f1: f1tap, storm, homebrew: bubbles, payments: approved, homelab, ai: thinking, printing, star: pendulum,
+  f1: combo(redbull, lightsout, 5, 0.4),
+  storm: combo(storm, supercell),
+  homebrew: combo(bubbles, beeroclock),
+  payments: combo(approved, blocked),
+  homelab: combo(homelab, dns),
+  ai: combo(thinking, hal),
+  printing: combo(printing, spaghetti),
+  star: combo(pendulum, supernova),
 };

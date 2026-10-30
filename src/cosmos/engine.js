@@ -40,6 +40,8 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     orbitGlow: 0,    // 0..1 extra orbit brightness (Pendulum)
     flash: null,     // { color, a } full-screen tint
     planetGlow: {},  // id -> 0..1 extra halo
+    planetHide: {},  // id -> 0..1 fade a planet out (DNS outage)
+    sunTint: null,   // hex: recolour the star (HAL, beer o'clock)
   };
 
   if (force) window.__cosmos = world;  // test hook, only with ?force
@@ -138,7 +140,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
   // ---- update -------------------------------------------------------------
   function update(dt) {
     t += dt;
-    Object.assign(world, { sunGain: 1, sunDim: 0, streak: 0, orbitGlow: 0, flash: null, planetGlow: {} });
+    Object.assign(world, { sunGain: 1, sunDim: 0, streak: 0, orbitGlow: 0, flash: null, planetGlow: {}, planetHide: {}, sunTint: null });
 
     nextPacket -= dt;
     if (nextPacket <= 0) { randomPacket(); nextPacket = rand(1.4, 2.8); }
@@ -245,13 +247,14 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     const breathe = (1 + 0.05 * Math.sin(t * 0.7) + 0.015 * Math.sin(t * 3.1)) * world.sunGain;
     const lit = 1 - world.sunDim * 0.85;
     const r = Math.max(7, R * 0.042);
+    const tc = world.sunTint || '#58a6ff', hc = world.sunTint || '#78b4ff';
     let g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 9 * breathe);
-    g.addColorStop(0, `rgba(120,180,255,${0.30 * lit})`); g.addColorStop(0.15, `rgba(88,166,255,${0.12 * lit})`);
-    g.addColorStop(0.45, `rgba(88,166,255,${0.035 * lit})`); g.addColorStop(1, 'rgba(88,166,255,0)');
+    g.addColorStop(0, rgba(hc, 0.30 * lit * (world.sunTint ? 1.6 : 1))); g.addColorStop(0.15, rgba(tc, 0.12 * lit * (world.sunTint ? 1.6 : 1)));
+    g.addColorStop(0.45, rgba(tc, 0.035 * lit)); g.addColorStop(1, rgba(tc, 0));
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 9 * breathe, 0, TAU); ctx.fill();
     g = ctx.createRadialGradient(cx, cy, 0, cx, cy, r * 1.6);
     g.addColorStop(0, `rgba(255,255,255,${0.15 + 0.85 * lit})`); g.addColorStop(0.45, `rgba(230,241,255,${0.1 + 0.9 * lit})`);
-    g.addColorStop(0.75, `rgba(160,205,255,${0.7 * lit})`); g.addColorStop(1, 'rgba(88,166,255,0)');
+    g.addColorStop(0.75, world.sunTint ? rgba(world.sunTint, 0.9 * lit) : `rgba(160,205,255,${0.7 * lit})`); g.addColorStop(1, rgba(tc, 0));
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy, r * 1.6, 0, TAU); ctx.fill();
   }
 
@@ -261,6 +264,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     const lx = x + Math.cos(lit) * s * 0.45, ly = y + Math.sin(lit) * s * 0.45;
     const glow = world.planetGlow[p.id] || 0;
     const hov = hover === p ? 0.6 : 0;
+    ctx.save(); ctx.globalAlpha = 1 - (world.planetHide[p.id] || 0) * 0.9;
 
     const hr = s * (3 + glow * 3 + hov);
     const halo = ctx.createRadialGradient(x, y, 0, x, y, hr);
@@ -277,6 +281,7 @@ export function createCosmos(canvas, { reducedMotion = false } = {}) {
     ctx.textAlign = 'center';
     ctx.fillStyle = rgba('#cfe6ff', 0.35 + 0.15 * (depth + 1) / 2 + hov * 0.4);
     ctx.fillText(p.label, x, y + s + 13);
+    ctx.restore();
   }
 
   function drawRing(x, y, s, color, half) {

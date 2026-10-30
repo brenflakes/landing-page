@@ -250,12 +250,48 @@ const AnimatedTitle = () => {
     return () => clearInterval(interval);
   }, [charBursts.length > 0]);
 
+  // The cosmos can hijack the title (Nine-Nine!, HAL...): scramble into the new text, hold it,
+  // then decode back to bren.id.au. Fired as a window event so the canvas engine stays React-free.
+  useEffect(() => {
+    const onHijack = (e) => {
+      const { text, color = COLORS.accent, hold = 2500 } = e.detail || {};
+      if (!text) return;
+      titleAnimationRef.animationId = null;
+      if (titleAnimationRef.current) clearTimeout(titleAnimationRef.current);
+      setShowCursor(false);
+      setBootPrefix('');
+      const id = Date.now();
+      titleAnimationRef.animationId = id;
+      const start = Date.now();
+      const lockAt = text.split('').map((_, i) => 0.15 + i * 0.06 + Math.random() * 0.3);
+      // Keep the regular cycle from stomping on the hijack.
+      titleAnimationRef.hijackUntil = start + (Math.max(...lockAt) * 1000) + hold + 5000;
+      const step = () => {
+        if (titleAnimationRef.animationId !== id) return;
+        const el = (Date.now() - start) / 1000;
+        setTitleChars(text.split('').map((char, i) => ({
+          char: el >= lockAt[i] || char === ' ' ? char : getRandomChar(),
+          target: char, locked: el >= lockAt[i], color,
+        })));
+        if (lockAt.some(t => el < t)) titleAnimationRef.current = setTimeout(step, 50);
+        else titleAnimationRef.current = setTimeout(() => {
+          if (titleAnimationRef.animationId === id) matrixDecode();
+        }, hold);
+      };
+      step();
+    };
+    window.addEventListener('cosmos:title', onHijack);
+    return () => window.removeEventListener('cosmos:title', onHijack);
+  }, [matrixDecode]);
+
   // Cycle through animations
   useEffect(() => {
     const animations = [matrixDecode, glitchScramble, packetArrival, bootSequence];
     let cycleTimeout;
     
     const runAnimation = () => {
+      const wait = (titleAnimationRef.hijackUntil || 0) - Date.now();
+      if (wait > 0) { cycleTimeout = setTimeout(runAnimation, wait); return; }
       titleAnimationRef.animationId = null;
       if (titleAnimationRef.current) {
         clearTimeout(titleAnimationRef.current);
@@ -333,6 +369,7 @@ const AnimatedTitle = () => {
               color: c.color,
               transition: c.locked ? 'none' : 'color 0.1s',
               position: 'relative',
+              whiteSpace: 'pre',
             }}
           >
             {c.char}
